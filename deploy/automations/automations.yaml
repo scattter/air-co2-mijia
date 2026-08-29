@@ -1,0 +1,67 @@
+# HA 自动化示例：CO2 超标联动米家设备
+#
+# 前置：
+#   1) 固件已启用 MQTT 并连上 broker → HA 自动生成 CO2/温湿度 传感器实体
+#   2) 已用 ha_xiaomi_home 接入你的米家空气净化器/新风机
+#
+# 实体 ID 确认方法：设置 -> 设备与服务 -> 实体，搜索关键词。
+#   - CO2 传感器默认 id: sensor.lcd147_air_01_co2
+#   - 米家净化器默认 id 随型号而异，请改成你的（如 fan.xxx 或 switch.xxx）
+# 这里用了 "TRIGGERED 时" 触发方式：值持续高于阈值一定时间再动作，避免频繁误触发。
+
+- id: airco2_co2_high_open_purifier
+  alias: "CO2 超标自动开启净化器"
+  description: "当室内 CO2 持续高于阈值时，打开米家空气净化器"
+  trigger:
+    - platform: numeric_state
+      entity_id: sensor.lcd147_air_01_co2
+      above: 1000          # CO2 浓度阈值（ppm），按需调整
+      for: "00:05:00"      # 持续时间，5 分钟
+  condition:
+    - condition: numeric_state
+      entity_id: sensor.lcd147_air_01_co2
+      above: 1000
+  action:
+    - action: fan.turn_on      # 若你的实际为 switch，改成 switch.turn_on
+      target:
+        entity_id: switch.mi_purifier   # TODO: 改为你净化器的实体 id
+      # 注：米家净化器通过 ha_xiaomi_home 接入后，实体 id 通常是 fan.xxx
+  mode: single
+
+- id: airco2_co2_low_close_purifier
+  alias: "CO2 回落后关闭净化器"
+  description: "当 CO2 回落到正常水平持续一段时间后关闭净化器"
+  trigger:
+    - platform: numeric_state
+      entity_id: sensor.lcd147_air_01_co2
+      below: 800
+      for: "00:30:00"
+  condition: []
+  action:
+    - action: fan.turn_off
+      target:
+        entity_id: switch.mi_purifier   # TODO: 改为你净化器的实体 id
+  mode: single
+
+# ---- 其他可选示例 ----
+
+# 例：夜里 CO2 超标用小爱音箱播报提醒（需把小爱接入 HA 并配置 media_player）
+# - id: airco2_co2_night_notify
+#   alias: "夜间 CO2 超标提醒"
+#   trigger:
+#     - platform: numeric_state
+#       entity_id: sensor.lcd147_air_01_co2
+#       above: 1500
+#       for: "00:10:00"
+#   condition:
+#     - condition: time
+#       after: "23:00"
+#       before: "08:00"
+#   action:
+#     - action: media_player.play_media
+#       target:
+#         entity_id: media_player.xiaoai   # TODO: 你的小爱
+#       data:
+#         media_content_type: "tts"
+#         media_content_id: "请注意，当前室内二氧化碳浓度偏高"
+#   mode: single

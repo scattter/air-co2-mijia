@@ -1,58 +1,52 @@
-# air-co2-enclosure — CadQuery 盒子模型
+# air-co2-mijia
 
-针对 `air-co2-carrier-v1` 载板（**70 × 35 mm**，双层）的 3D 打印外壳模型。默认方案将一块约 **50 × 34 × 6 mm** 的软包电池放在 PCB 下方。
-模型用 **CadQuery（Python 代码参数化建模）** 编写，可在 **CQ-editor** 中预览 / 调参 / 导出。
+让现有 **`air-co2`**（ESP32-S3 + SCD40 空气监测仪，数据上报到 NAS）融入 **Home Assistant**，进而在 HA 里与**米家生态**联动的独立项目。
 
-尺寸基线来自本地 `air-co2-web.eprj2` 中的 `air-co2-carrier-v1-pcb`，屏幕外形与有效显示区参考 [Waveshare 官方 3D 结构包](https://www.waveshare.net/w/upload/2/2e/ESP32-S3-LCD-1.47B_20260204.zip)。
+> 本项目**不修改**原 `air-co2` 工程。它提供：独立固件副本（在原固件基础上增量增加 MQTT 上报）、Home Assistant + Mosquitto 的一键 Docker 部署、以及 CO2 超标联动米家设备（如空气净化器）的自动化示例。
+
+## 为什么需要它（重要认知）
+
+你最初的诉求是"把设备接进米家 App"。经过核实：
+
+- 小米官方的 **[ha_xiaomi_home](https://github.com/XiaoMi/ha_xiaomi_home)** 集成是**单向**的：它把**米家设备导入 Home Assistant**，**不支持**把 HA 里的 DIY 第三方实体反向推送到米家 App。
+- **米家 App 只显示经过小米/米家认证（入网 MIoT）的设备**。个人 DIY 硬件没有任何官方渠道能作为独立设备出现在米家 App 里。
+- 因此可行的、官方稳定路径是：**设备进 HA，在 HA 里与你的米家设备联动，通过 HA App 远程查看/控制**。HA 与米家设备的双向控制由官方 ha_xiaomi_home 提供。
+
+正是这一点决定了本项目设计成为"HA 桥接"而非"进米家 App"。
+
+## 架构
+
+```
+ESP32 (SCD40)
+   ├── HTTP POST → NAS Fastify (SQLite + 原网页)   [原项目, 保留]
+   └── MQTT ──► Mosquitto broker ──► Home Assistant 实体 (自动发现)
+                                           │
+                                           ▼  ha_xiaomi_home 集成
+                                    读取/控制你的米家设备（净化器等）
+                                           │
+                                           ▼
+                         HA 自动化：CO2 超标 → 打开米家空气净化器
+                           HA App 远程查看/控制本设备
+```
+
+## 使用步骤（概览）
+
+1. **部署 Home Assistant + Mosquitto**：见 [`deploy/`](./deploy/)
+2. **烧录固件**（NVS 运行时配置 + HTTP/MQTT 上报）：见 [`firmware/`](./firmware/)，首次开机自动进入**配置门户**（或长按 BOOT 键），在网页里填写 Wi-Fi / 服务器 / MQTT 即可，无需改代码重烧
+3. **HA 配置米家集成**（hap `ha_xiaomi_home`）：见 [`docs/ha-integration.md`](./docs/ha-integration.md)
+4. **添加联动自动化**：见 [`deploy/automations/`](./deploy/automations/)
+5. **验证**：见 [`docs/troubleshooting.md`](./docs/troubleshooting.md)
 
 ## 目录结构
 
 ```
-models/
-├── pyproject.toml          # uv 项目声明（依赖 cadquery）
-├── air_co2/
-│   ├── geometry.py         # ★ 所有尺寸参数集中在此（改参数的地方）
-│   ├── bottom.py           # 底壳模型（result 变量）
-│   ├── top.py              # 顶壳模型（result 变量）
-│   ├── assembly.py         # 上下壳彩色装配预览
-│   └── __init__.py
-└── scripts/
-    ├── export_stl.py       # 导出 STL（bottom / top / assembly）
-    ├── check_model.py      # 几何与干涉自检
-    ├── render_preview.py   # 生成爆炸预览图
-    └── report.py           # 打印尺寸摘要供核对
+air-co2-mijia/
+├── deploy/                 # Docker 部署
+│   ├── docker-compose.yml  # homeassistant + mosquitto
+│   ├── homeassistant/      # HA 配置
+│   ├── mosquitto/          # broker 配置
+│   └── automations/        # HA 自动化示例（含米家联动）
+├── firmware/               # 独立固件副本（原 air-co2 + MQTT）
+├── docs/                   # 说明文档
+└── README.md
 ```
-
-## 在 CQ-editor 中观看 / 调参
-
-1. 打开 CQ-editor，再打开项目根目录的 `cq_preview.py`，点击运行即可查看上下壳、PCB 和电池的彩色总览。
-2. 需要改尺寸 / 开口位置时，**改 `geometry.py` 里带 `[MEASURE]` 的参数**，保存后 CQ-editor 自动刷新。
-3. 在 CQ-editor 里确认模型无误后导出 STL（或用它内置的 export）。
-
-## ⚠️ 使用前务必实测并填好的关键尺寸（都在 geometry.py）
-
-| 参数 | 作用 | 状态 |
-|------|------|------|
-| `STACK_HEIGHT` | 载板+屏开发板+排针总高 → 决定盒高 | [MEASURE] 需你卡尺实测 |
-| `LCD_W / LCD_H / LCD_OFFSET_*` | 屏幕窗位置尺寸 | 已按 Waveshare 官方 LCD AA 与 PCB 坐标设置 |
-| `USB_OFFSET_Y / USB_CENTER_ABOVE_FLOOR` | USB 口位置 | [MEASURE] 需对叠高后实测 |
-| `SW_*` | 电源拨动开关操作窗 | [MEASURE] 需对实物拨杆高度 |
-| `PILLAR_POS` | 载板 4 个 2.7mm 安装孔坐标 | 已按 PCB 孔位设置，打印前仍建议实物复核 |
-| `SCD_OFFSET_*` | SCD40 通气栅格位置 | 已按 PCB 禁布区设置 |
-| `BAT_LENGTH / BAT_WIDTH / BAT_THICK` | 内置软包电池外形 | [MEASURE] 下单电池后需卡尺实测 |
-
-> 默认值是为"先能出图验证几何逻辑"而估的，**不代表最终可用尺寸**。务必打印 `1:1 PDF` 对着实物修正。软包电池托盘只做限位，装配时使用绝缘泡棉胶固定，不要让螺丝、柱位或壳体挤压电芯。
-
-上下壳默认用 3 根 M2.5 长螺丝从顶部穿过顶壳和 PCB，锁入底壳柱位的 2.1 mm 自攻导孔。左上角因紧邻屏幕窗不放顶壳螺丝，但仍保留 PCB 支撑柱。螺丝长度需按实际叠高选择，打印首件后再定。
-
-## 命令行导出（可选，若配了 uv 环境）
-
-```bash
-uv run --with cadquery python scripts/report.py            # 看尺寸摘要
-uv run --with cadquery python scripts/check_model.py       # 检查关键间隙/实体/干涉
-uv run --with cadquery python scripts/export_stl.py bottom  # 导出底壳 STL 到 ./out
-uv run --with cadquery python scripts/export_stl.py top     # 导出顶壳 STL
-uv run --with cadquery python scripts/render_preview.py     # 渲染 ./out/preview.png
-```
-
-导出的 STL 直接拖进 **Bambu Studio** 切片 → 发 **拓竹 P1S + AMS** 打印（建议 PETG）。

@@ -1,0 +1,48 @@
+# air-co2-mijia 部署：Home Assistant + Mosquitto (MQTT broker)
+# 在 NAS 上与原有 air-co2 服务并跑。本 compose 只负责 HA 与 MQTT。
+#
+# 用法：
+#   cd deploy
+#   docker compose up -d
+#
+# 说明：
+#   - homeassistant:      端口 8123，web 访问 http://<NAS IP>:8123
+#   - mosquitto:          端口 1883（MQTT）/ 9001（WebSocket，可选）
+#   - 原 air-co2 服务请继续用原有 nas 的 docker-compose 管理，两者互不冲突。
+
+services:
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:stable
+    container_name: homeassistant
+    restart: unless-stopped
+    # 让 HA 能看到宿主机（NAS）的网络，便于后续局域网控制 / 中枢网关发现
+    network_mode: host
+    environment:
+      - TZ=Asia/Shanghai
+    volumes:
+      - ./homeassistant:/config
+      # 可选：挂载可访问的 SSL 证书目录等
+    devices:
+      # 若需在 HA 中直连 USB 设备（此处本设备走 MQTT，通常不需要）
+      # - /dev/ttyUSB0:/dev/ttyUSB0
+      - /dev/agpgart:/dev/agpgart:ro
+      - /dev/dri:/dev/dri:ro
+    privileged: true
+    # 备注：host 网络 + privileged 为本地化控制（中枢网关/局域网）常见配置；
+    # 如不需要可去掉 privileged 与 devices 以更安全。
+
+  mosquitto:
+    image: eclipse-mosquitto:2.0
+    container_name: mosquitto
+    restart: unless-stopped
+    ports:
+      - "1883:1883"      # MQTT
+      - "9001:9001"      # MQTT over WebSocket（可选，用于某些前端）
+    volumes:
+      - ./mosquitto/config/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto-data:/mosquitto/data
+      - mosquitto-log:/mosquitto/log
+
+volumes:
+  mosquitto-data:
+  mosquitto-log:

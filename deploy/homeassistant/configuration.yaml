@@ -1,0 +1,31 @@
+# Home Assistant 基础配置
+# 说明：把 latitude / longitude 改成你所在位置的真实坐标，否则实体/日出日落等功能不可用。
+homeassistant:
+  name: Home
+  latitude: 31.2304   # TODO: 改成你的纬度
+  longitude: 121.4737 # TODO: 改成你的经度
+  unit_system: metric
+  time_zone: Asia/Shanghai
+
+# 加载自动化与脚本（见 deploy/automations/）
+automation: !include automations.yaml
+script: !include scripts.yaml
+
+# MQTT broker：对接 deploy 里的 eclipse-mosquitto 容器
+# 固件上报的数据会经 MQTT Discovery 自动成为实体，无需手工定义 sensor。
+mqtt:
+  broker: 127.0.0.1
+  port: 1883
+  # 若 mosquitto 启用了用户名密码认证，改成：
+  # username: mqtt_user
+  # password: "你的密码"
+  discovery: true
+
+# 米家设备接入：官方 ha_xiaomi_home 集成
+# 安装与配置见 docs/ha-integration.md（HACS 或 git clone + install.sh）
+# 装好后在：设置 -> 设备与服务 -> 添加集成 -> Xiaomi Home 绑定账号。
+
+logger:
+  default: warn
+  logs:
+    homeassistant.components.mqtt: info
